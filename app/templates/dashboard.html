@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    
+    <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="mb-0 fw-bold"><i class="bi bi-file-earmark-bar-graph me-2"></i>Active Dataset</h4>
+                <p class="mb-0 small opacity-75" id="display_name">{{ filename }}</p>
+            </div>
+            <div class="text-end">
+                <span class="d-block h3 mb-0 fw-bold" id="stat_rows">{{ "{:,}".format(rows) }} Rows</span>
+                <span class="badge bg-light text-primary" id="stat_cols">{{ cols }} Columns</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-5">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2"></i>Current Data Preview</h5>
+            <span class="badge bg-info text-dark">Top 10 Rows</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" id="table_area" style="max-height: 450px;">
+                {{ table | safe }}
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 border-start border-warning border-4 mb-5">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 fw-bold text-warning"><i class="bi bi-tools me-2"></i>Data Cleaning & Transformation</h5>
+        </div>
+        <div class="card-body bg-light">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 bg-white rounded shadow-sm h-100">
+                        <h6 class="fw-bold small text-uppercase mb-3">Missing Values</h6>
+                        <button onclick="showNullReport()" class="btn btn-warning w-100 fw-bold">Scan for Nulls</button>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="p-3 bg-white rounded shadow-sm h-100">
+                        <h6 class="fw-bold small text-uppercase mb-3">Manage Columns</h6>
+                        <div class="input-group">
+                            <select id="drop_target" class="form-select col-options">
+                                {% for c in analysis.all_cols %}<option>{{ c }}</option>{% endfor %}
+                            </select>
+                            <button onclick="applyAction('drop_col', {column: document.getElementById('drop_target').value})" class="btn btn-danger">Drop</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="p-3 bg-white rounded shadow-sm h-100">
+                        <h6 class="fw-bold small text-uppercase mb-3">Aggregation (GroupBy)</h6>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <select id="group_by_col" class="form-select form-select-sm col-options">
+                                    <option selected disabled>Group By</option>
+                                    {% for c in analysis.all_cols %}<option>{{ c }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <select id="agg_val_col" class="form-select form-select-sm col-options">
+                                    <option selected disabled>Target Col</option>
+                                    {% for c in analysis.all_cols %}<option>{{ c }}</option>{% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="runGroup()" class="btn btn-sm btn-outline-primary w-100 mt-2 fw-bold">Apply Mean GroupBy</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="nullBox" class="mt-4 d-none">
+                <div class="alert alert-secondary border-0 shadow-sm">
+                    <h6 class="fw-bold">Null Value Analysis Report</h6>
+                    <div id="nullList" class="list-group list-group-flush bg-transparent"></div>
+                    <button onclick="document.getElementById('nullBox').classList.add('d-none')" class="btn btn-sm btn-link text-muted mt-2">Dismiss Report</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-5">
+        <h5 class="fw-bold mb-3"><i class="bi bi-calculator me-2"></i>Statistical Summary</h5>
+        <div class="card shadow-sm border-0 p-0 overflow-hidden" id="stats_area">
+            {{ analysis.stats_table | safe }}
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Correlation Heatmap</div>
+                <div class="card-body text-center" id="heatmap_area">
+                    {% if analysis.visuals.heatmap %}
+                        <img src="data:image/png;base64,{{ analysis.visuals.heatmap }}" class="img-fluid rounded shadow-sm">
+                    {% else %}
+                        <p class="text-muted mt-5">No numeric correlations available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Primary Distribution</div>
+                <div class="card-body text-center" id="dist_area">
+                    {% if analysis.visuals.distribution %}
+                        <img src="data:image/png;base64,{{ analysis.visuals.distribution }}" class="img-fluid rounded shadow-sm">
+                    {% else %}
+                        <p class="text-muted mt-5">No distribution plot available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 border-top border-primary border-4 mb-5">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-palette me-2"></i>Dynamic Visualization Configurator</h5>
+        </div>
+        <div class="card-body bg-light">
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <div class="p-3 bg-white rounded shadow-sm">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">PLOT TYPE</label>
+                            <select id="plot_type" class="form-select">
+                                {% for p_key, p_val in analysis.plot_options.items() %}
+                                <option value="{{ p_key }}">{{ p_key|capitalize }}</option>
+                                {% endfor %}
+                            </select>
+                            <div id="plot_help" class="form-text mt-2 text-primary small"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">X-PARAMETER</label>
+                            <select id="x_col" class="form-select col-options">
+                                {% for col in analysis.all_cols %}<option>{{ col }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Y-PARAMETER (OPTIONAL)</label>
+                            <select id="y_col" class="form-select col-options">
+                                <option value="None">None (Univariate)</option>
+                                {% for col in analysis.all_cols %}<option>{{ col }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <button onclick="generateDynamicPlot()" class="btn btn-primary w-100 fw-bold py-2">RENDER VISUAL</button>
+                    </div>
+                </div>
+                <div class="col-lg-8">
+                    <div id="plotDisplayArea" class="bg-white rounded shadow-sm d-flex align-items-center justify-content-center border" style="min-height: 400px;">
+                        <div id="plotLoader" class="d-none text-center">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 fw-bold">Analyzing Data...</p>
+                        </div>
+                        <div id="plotError" class="alert alert-danger d-none mx-3 w-100">
+                            <h6 class="fw-bold">No such plot can be plotted</h6>
+                            <p id="errorMessage" class="mb-0 small"></p>
+                        </div>
+                        <div id="plotPlaceholder" class="text-center">
+                            <i class="bi bi-cpu text-light" style="font-size: 4rem;"></i>
+                            <p class="text-muted mt-2">Ready for Visualization Command</p>
+                        </div>
+                        <img id="plotImage" src="" class="img-fluid d-none">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-danger mt-5 mb-5 shadow-sm">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="fw-bold text-danger mb-0">Drop Dataset from Dashboard</h6>
+                <p class="text-muted small mb-0">Permanent deletion of original and transformed files.</p>
+            </div>
+            <button onclick="confirmDeletion()" class="btn btn-outline-danger btn-sm">Delete Data Permanently</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let activeFile = '{{ filename }}';
+    const plotOptions = {{ analysis.plot_options | tojson }};
+
+    // Initialize help text
+    document.getElementById('plot_help').innerText = plotOptions[document.getElementById('plot_type').value].desc;
+    document.getElementById('plot_type').addEventListener('change', (e) => {
+        document.getElementById('plot_help').innerText = plotOptions[e.target.value].desc;
+    });
+
+    // --- TRANSFORMATION LOGIC ---
+    function showNullReport() {
+        const fd = new FormData(); fd.append('filename', activeFile);
+        fetch('/check_nulls', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => {
+            const list = document.getElementById('nullList');
+            list.innerHTML = '';
+            document.getElementById('nullBox').classList.remove('d-none');
+            if (Object.keys(data.null_report).length === 0) {
+                list.innerHTML = '<p class="text-success mb-0">No null values found!</p>';
+            }
+            for (const [col, count] of Object.entries(data.null_report)) {
+                list.innerHTML += `
+                    <div class="list-group-item d-flex justify-content-between align-items-center bg-transparent px-0 border-0">
+                        <span><strong>${col}</strong>: ${count} missing</span>
+                        <div>
+                            <button onclick="applyAction('dropna_col', {column:'${col}'})" class="btn btn-xs btn-outline-danger py-0">Drop Null Rows</button>
+                            <button onclick="applyAction('fillna_col', {column:'${col}', value:0})" class="btn btn-xs btn-outline-primary py-0">Fill 0</button>
+                        </div>
+                    </div>`;
+            }
+        });
+    }
+
+    function applyAction(action, params) {
+        const fd = new FormData();
+        fd.append('filename', activeFile);
+        fd.append('action', action);
+        for (const k in params) fd.append(k, params[k]);
+
+        fetch('/transform', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => {
+            if(data.success) {
+                // Instantly Update UI State
+                activeFile = data.new_filename;
+                document.getElementById('display_name').innerText = activeFile;
+                document.getElementById('stat_rows').innerText = data.new_rows.toLocaleString() + " Rows";
+                document.getElementById('stat_cols').innerText = data.new_cols + " Columns";
+                document.getElementById('table_area').innerHTML = data.new_table;
+                document.getElementById('stats_area').innerHTML = data.analysis.stats_table;
+                
+                // Refresh Column Dropdowns
+                document.querySelectorAll('.col-options').forEach(select => {
+                    select.innerHTML = data.all_cols.map(c => `<option>${c}</option>`).join('');
+                });
+                
+                // Refresh Auto-EDA images
+                if (data.analysis.visuals.heatmap) {
+                    document.getElementById('heatmap_area').innerHTML = `<img src="data:image/png;base64,${data.analysis.visuals.heatmap}" class="img-fluid rounded shadow-sm">`;
+                }
+                if (data.analysis.visuals.distribution) {
+                    document.getElementById('dist_area').innerHTML = `<img src="data:image/png;base64,${data.analysis.visuals.distribution}" class="img-fluid rounded shadow-sm">`;
+                }
+                
+                document.getElementById('nullBox').classList.add('d-none');
+                alert("Transformation successful!");
+            } else { alert("Operation Error: " + data.error); }
+        });
+    }
+
+    function runGroup() {
+        applyAction('groupby', {
+            group_by: document.getElementById('group_by_col').value,
+            agg_col: document.getElementById('agg_val_col').value,
+            agg_func: 'mean'
+        });
+    }
+
+    // --- VISUALIZATION LOGIC ---
+    function generateDynamicPlot() {
+        const loader = document.getElementById('plotLoader');
+        const errorDiv = document.getElementById('plotError');
+        const msg = document.getElementById('errorMessage');
+        const img = document.getElementById('plotImage');
+        const placeholder = document.getElementById('plotPlaceholder');
+
+        loader.classList.remove('d-none');
+        errorDiv.classList.add('d-none');
+        img.classList.add('d-none');
+        placeholder.classList.add('d-none');
+
+        const fd = new FormData();
+        fd.append('filename', activeFile);
+        fd.append('plot_type', document.getElementById('plot_type').value);
+        fd.append('x_col', document.getElementById('x_col').value);
+        fd.append('y_col', document.getElementById('y_col').value);
+
+        fetch('/generate_plot', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => {
+            loader.classList.add('d-none');
+            if (data.success) {
+                img.src = "data:image/png;base64," + data.plot_data;
+                img.classList.remove('d-none');
+            } else {
+                msg.innerText = data.error;
+                errorDiv.classList.remove('d-none');
+            }
+        });
+    }
+
+    // --- DELETION LOGIC ---
+    function confirmDeletion() {
+        if (confirm("WARNING: Are you sure you want to drop this dataset? Original and transformed files will be permanently deleted.")) {
+            const fd = new FormData(); fd.append('filename', activeFile);
+            fetch('/delete_dataset', { method: 'POST', body: fd })
+            .then(res => res.json()).then(data => {
+                if (data.success) { window.location.href = "/"; }
+                else { alert("Error deleting dataset: " + data.error); }
+            });
+        }
+    }
+</script>
+{% endblock %}

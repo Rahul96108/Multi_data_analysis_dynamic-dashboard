@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card p-5 mt-5">
+            <h2 class="text-center mb-4">Upload Dataset</h2>
+            <p class="text-center text-muted">Upload a CSV, Excel, or JSON file to start the analysis.</p>
+            
+            <form action="/upload" method="post" enctype="multipart/form-data" class="mt-4">
+                <div class="mb-3">
+                    <input type="file" name="file" class="form-control form-control-lg" accept=".csv, .xlsx, .xls, .json" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">Analyze Data</button>
+                </div>
+            </form>
+            
+            <div class="mt-4 small text-center text-secondary">
+                Supported formats: <strong>.csv, .xlsx, .json</strong> (Max 16MB)
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "8000:5000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./app.db:/app/app.db
+    environment:
+      - SECRET_KEY=your_super_secret_key_here
+      - UPLOAD_FOLDER=uploads
