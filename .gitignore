@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+instance/
+uploads/*.csv
+uploads/*.xlsx
+.env
+app.db
