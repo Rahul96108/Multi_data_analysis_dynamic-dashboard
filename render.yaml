@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: flask-eda-app
+    env: python
+    plan: free # Use the free tier for testing
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 4 --bind 0.0.0.0:$PORT "run:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
