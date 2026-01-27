@@ -154,6 +154,29 @@ class TransformationService:
                 # Grouping creates a new dataframe structure
                 df_copy = df_copy.groupby(g_col)[a_col].agg(func).reset_index()
 
-            return df_copy, None
+
+
+
+
+            work_df = df.copy() 
+        
+            try:
+                if action == 'groupby':
+                    group_col = params.get('group_col')
+                    agg_col = params.get('agg_col')
+                    agg_func = params.get('agg_func', 'mean').lower()
+                
+                    if group_col and agg_col:
+                        work_df = work_df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
+                        return work_df, None
+                    else:
+                        return None, "Please select both a Category and a Numeric column."
+
+
+            
+            except Exception as e:
+                return None, f"Transformation Error: {str(e)}"
+                return df_copy, None
         except Exception as e:
+
             return df, str(e)
