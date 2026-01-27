@@ -13,32 +13,39 @@ def index():
 
 @main_bp.route('/upload', methods=['POST'])
 def upload_file():
+    # 1. Check if the file actually exists in the request
     file = request.files.get('file')
     if not file or file.filename == '':
-        return "DEBUG: No file was received by the server.", 400
-
+        return render_template('index.html', error="No file selected")
+    
     filename = secure_filename(file.filename)
+    # 2. Use Absolute Paths (Crucial for Cloud)
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-
-    # REMOVED the try/except block here so we can see the REAL error in the browser
-    df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_excel(filepath)
     
-    # This is where the crash is likely happening
-    analysis = DataService.analyze_dataframe(df)
+    try:
+        # 3. Save the physical file
+        file.save(filepath)
+        
+        # 4. Read the data
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+
+        # 5. Log it in the Database
+        new_record = DatasetMetadata(filename=filename)
+        db.session.add(new_record)
+        db.session.commit()
+
+        # 6. Analyze and Show Results
+        analysis = DataService.analyze_dataframe(df)
+        return render_template('dashboard.html', filename=filename, analysis=analysis, 
+                               rows=len(df), cols=len(df.columns),
+                               table=df.head(10).to_html(classes='table table-sm', index=False))
     
-    # Database Logging
-    meta = DatasetMetadata(filename=filename, rows=len(df), cols=len(df.columns))
-    db.session.add(meta)
-    db.session.commit()
-
-    return render_template('dashboard.html', 
-                           filename=filename, 
-                           analysis=analysis, 
-                           rows=len(df), 
-                           cols=len(df.columns),
-                           table=df.head(5).to_html(classes='table table-sm'))
-
+    except Exception as e:
+        # This will tell us the EXACT error in the browser
+        return render_template('index.html', error=f"Upload Failed: {str(e)}")
 @main_bp.route('/generate_plot', methods=['POST'])
 def generate_plot():
     filename = request.form.get('filename')
@@ -130,4 +137,5 @@ def delete_dataset():
         return jsonify({"success": True, "message": "Dataset purged successfully"})
 
     except Exception as e:
+
         return jsonify({"success": False, "error": str(e)}), 500
