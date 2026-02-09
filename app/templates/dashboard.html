@@ -318,6 +318,40 @@
             });
         }
     }
+
+    function applyTransformation(actionType) {
+    // Collect data from your form
+    const formData = $('#transform-form').serialize() + '&action=' + actionType;
+    
+    // Show a loading state in the AI box
+    $('#ai-text').html('<div class="text-center py-3"><div class="spinner-grow text-primary" role="status"></div><p>Gemini is re-analyzing...</p></div>');
+
+    $.ajax({
+        url: '/transform',
+        type: 'POST',
+        data: formData,
+        success: function(response) {
+            if(response.success) {
+                // 1. Update the AI text with the new response from Gemini
+                $('#ai-text').fadeOut(200, function() {
+                    $(this).html(response.ai_insights).fadeIn(200);
+                });
+
+                // 2. Update the table and other UI elements
+                $('#table-container').html(response.new_table);
+                $('#rows-count').text(response.new_rows);
+            } else {
+                alert("Transformation failed: " + response.error);
+                // Revert AI text if error
+                $('#ai-text').text("Error generating new insights.");
+            }
+        }
+    });
+}
+
+
+    
 </script>
 
 {% endblock %}
+
