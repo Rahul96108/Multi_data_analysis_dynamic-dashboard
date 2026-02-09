@@ -46,49 +46,61 @@ def index():
 
 @main_bp.route('/upload', methods=['POST'])
 def upload_file():
-    """Handles everything: Save, Database, Pandas Stats, and Gemini."""
-    file = request.files.get('file')
-    if not file or file.filename == '':
-        return render_template('index.html', error="Please select a valid file.")
+    # 1. SECURITY GUARD: Check if the 'file' key exists in HTML
+    if 'file' not in request.files:
+        return render_template('index.html', error="No file part. Check your HTML 'name' attribute.")
 
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+    file = request.files['file']
 
-    try:
-        # 1. Save and Load
-        file.save(filepath)
-        df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_excel(filepath)
+    if file.filename == '':
+        return render_template('index.html', error="No file selected.")
 
-        # 2. Database Record
-        existing = DatasetMetadata.query.filter_by(filename=filename).first()
-        if not existing:
-            db.session.add(DatasetMetadata(filename=filename))
-            db.session.commit()
+    if file:
+        try:
+            # 2. PATH LOGIC: Get the absolute path to the 'uploads' folder
+            # This is the #1 reason for refreshes on cloud servers
+            upload_dir = current_app.config['UPLOAD_FOLDER']
+            
+            # Create the folder if it's missing (Crucial for Render/Railway)
+            if not os.path.exists(upload_dir):
+                os.makedirs(upload_dir, exist_ok=True)
 
-        # 3. Pandas Logic: Generate basic stats
-        analysis = {
-            "columns": list(df.columns),
-            "null_counts": df.isnull().sum().to_dict(),
-            "types": df.dtypes.astype(str).to_dict(),
-            "summary": df.describe().to_html(classes='table table-bordered table-sm')
-        }
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(upload_dir, filename)
 
-        # 4. Gemini Logic: Generate initial story
-        summary_text = df.describe(include='all').to_string()
-        ai_insights = get_gemini_analysis(summary_text, context=f"Initial analysis of {filename}")
+            # 3. SAVE ACTION
+            file.save(filepath)
 
-        return render_template(
-            'dashboard.html',
-            filename=filename,
-            analysis=analysis,
-            ai_insights=ai_insights,
-            rows=len(df),
-            cols=len(df.columns),
-            table=df.head(10).to_html(classes='table table-striped table-hover', index=False)
-        )
+            # 4. PANDAS PROCESSING
+            if filename.endswith('.csv'):
+                df = pd.read_csv(filepath)
+            else:
+                df = pd.read_excel(filepath)
 
-    except Exception as e:
-        return render_template('index.html', error=f"Critical Error: {str(e)}")
+            # Generate stats for the dashboard
+            analysis = {
+                "columns": list(df.columns),
+                "summary": df.describe().to_html(classes='table table-sm')
+            }
+
+            # 5. GEMINI AI: Get the initial story
+            summary_for_ai = df.describe(include='all').to_string()
+            ai_insights = get_gemini_analysis(summary_for_ai)
+
+            return render_template(
+                'dashboard.html',
+                filename=filename,
+                analysis=analysis,
+                ai_insights=ai_insights,
+                rows=len(df),
+                cols=len(df.columns),
+                table=df.head(10).to_html(classes='table table-sm table-striped', index=False)
+            )
+
+        except Exception as e:
+            # If it crashes here, it shows the error instead of refreshing
+            print(f"UPLOAD CRASH: {str(e)}")
+            return render_template('index.html', error=f"File Error: {str(e)}")
 
 @main_bp.route('/transform', methods=['POST'])
 def transform_data():
@@ -194,3 +206,4 @@ def delete_dataset():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
