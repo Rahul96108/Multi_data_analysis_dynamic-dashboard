@@ -48,77 +48,60 @@ def index():
 
 
 @main_bp.route('/upload', methods=['POST'])
+@main_bp.route('/upload', methods=['POST'])
 def upload_file():
+    print("--- 🚀 UPLOAD REQUEST RECEIVED ---") # Check your logs for this!
     try:
-        # 1. VALIDATE THE REQUEST
-        if 'file' not in request.files:
-            return render_template('index.html', error="No file part in request.")
-        
-        file = request.files['file']
-        if file.filename == '':
+        file = request.files.get('file')
+        if not file or file.filename == '':
             return render_template('index.html', error="No file selected.")
 
-        # 2. SECURE THE PATH (The Cloud Fix)
+        # 1. Save logic
         filename = secure_filename(file.filename)
-        # Use the volume path /app/uploads for Render/Railway
         upload_dir = current_app.config['UPLOAD_FOLDER']
-        
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir, exist_ok=True)
-            
+        os.makedirs(upload_dir, exist_ok=True)
         filepath = os.path.join(upload_dir, filename)
-
-        # 3. SAVE & VERIFY (Prevents EmptyDataError)
         file.save(filepath)
-        if os.path.getsize(filepath) == 0:
-            return render_template('index.html', error="File is empty. Upload failed.")
 
-        # 4. PANDAS PROCESSING
-        if filename.endswith('.csv'):
-            df = pd.read_csv(filepath)
-        elif filename.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(filepath)
-        else:
-            return render_template('index.html', error="Unsupported format.")
+        # 2. Check size immediately (Log it so we see it in Render)
+        filesize = os.path.getsize(filepath)
+        print(f"--- 📂 File Saved: {filename} ({filesize} bytes) ---")
 
-        # 5. DATABASE LOGGING
-        existing = DatasetMetadata.query.filter_by(filename=filename).first()
-        if not existing:
-            db.session.add(DatasetMetadata(filename=filename))
-            db.session.commit()
+        # 3. Pandas Read
+        df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_excel(filepath)
+        
+        # 4. SAFETY: The "Empty Gemini" Fallback
+        # If Gemini takes too long, it can cause the 'Refresh' crash.
+        # We wrap it so the app continues even if AI fails.
+        ai_insights = "AI is still processing..." 
+        try:
+            data_summary = df.describe().to_string()
+            # Set a 'short' timeout if possible in your ai_service
+            ai_insights = get_gemini_analysis(data_summary) 
+        except Exception as ai_err:
+            print(f"--- 🤖 AI TIMEOUT/ERROR: {ai_err} ---")
 
-        # 6. CONTEXT FOR HTML (Fixes the 'Undefined' error)
-        # We define everything the HTML expects so it doesn't crash
         analysis = {
             "columns": list(df.columns),
-            "visuals": {
-                "heatmap": None, # Placeholder to satisfy Jinja2
-                "distribution": None
-            },
+            "visuals": {"heatmap": None},
             "stats": df.describe().to_dict()
         }
 
-        # 7. GEMINI AI INTEGRATION
-        # Send top 10 rows + stats to Gemini for a smart summary
-        data_summary = f"Stats:\n{df.describe().to_string()}\n\nSample:\n{df.head(5).to_string()}"
-        ai_insights = get_gemini_analysis(data_summary, context=f"Uploading {filename}")
-
-        # 8. RENDER DASHBOARD
+        print("--- ✅ SUCCESS: Rendering Dashboard ---")
         return render_template(
             'dashboard.html',
             filename=filename,
             ai_insights=ai_insights,
-            table=df.head(10).to_html(classes='table table-striped table-hover', index=False),
+            table=df.head(10).to_html(classes='table table-sm', index=False),
+            analysis=analysis,
             rows=len(df),
-            cols=len(df.columns),
-            analysis=analysis
+            cols=len(df.columns)
         )
 
     except Exception as e:
-        # Print the exact line number and error to the cloud logs
-        print("!!! CRITICAL UPLOAD ERROR !!!")
+        print("--- ❌ CRITICAL ERROR ---")
         print(traceback.format_exc())
-        return render_template('index.html', error=f"Processing failed: {str(e)}")
+        return f"System Crash: {str(e)}", 500
 
 @main_bp.route('/transform', methods=['POST'])
 def transform_data():
@@ -224,6 +207,7 @@ def delete_dataset():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
 
 
 
