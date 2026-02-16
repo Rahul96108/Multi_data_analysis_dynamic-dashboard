@@ -48,7 +48,6 @@ def index():
 
 
 @main_bp.route('/upload', methods=['POST'])
-@main_bp.route('/upload', methods=['POST'])
 def upload_file():
     print("--- 🚀 UPLOAD REQUEST RECEIVED ---") # Check your logs for this!
     try:
@@ -70,9 +69,6 @@ def upload_file():
         # 3. Pandas Read
         df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_excel(filepath)
         
-        # 4. SAFETY: The "Empty Gemini" Fallback
-        # If Gemini takes too long, it can cause the 'Refresh' crash.
-        # We wrap it so the app continues even if AI fails.
         ai_insights = "AI is still processing..." 
         try:
             data_summary = df.describe().to_string()
@@ -81,11 +77,28 @@ def upload_file():
         except Exception as ai_err:
             print(f"--- 🤖 AI TIMEOUT/ERROR: {ai_err} ---")
 
+        # --- THE FIX: Add 'plot_options' to the dictionary ---
         analysis = {
             "columns": list(df.columns),
             "visuals": {"heatmap": None},
-            "stats": df.describe().to_dict()
+            "stats": df.describe().to_dict(),
+            # Add this so the HTML finds the attribute it's looking for
+            "plot_options": {
+                "available_charts": ['bar', 'scatter', 'line', 'hist'],
+                "suggested_x": list(df.columns)[0] if len(df.columns) > 0 else None
+            }
         }
+
+        print("--- ✅ SUCCESS: Rendering Dashboard ---")
+        return render_template(
+            'dashboard.html',
+            filename=filename,
+            ai_insights=ai_insights,
+            table=df.head(10).to_html(classes='table table-sm', index=False),
+            analysis=analysis, # This now contains plot_options
+            rows=len(df),
+            cols=len(df.columns)
+        )
 
         print("--- ✅ SUCCESS: Rendering Dashboard ---")
         return render_template(
@@ -207,6 +220,7 @@ def delete_dataset():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
 
 
 
