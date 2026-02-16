@@ -8,6 +8,8 @@ import google.generativeai as genai
 from flask import Blueprint, render_template, request, current_app, jsonify
 from werkzeug.utils import secure_filename
 from .models import db, DatasetMetadata
+import traceback
+
 
 # Configuration for plots
 plt.switch_backend('Agg') 
@@ -44,63 +46,58 @@ def get_gemini_analysis(data_summary, context="initial upload"):
 def index():
     return render_template('index.html')
 
+
 @main_bp.route('/upload', methods=['POST'])
 def upload_file():
-    # 1. SECURITY GUARD: Check if the 'file' key exists in HTML
-    if 'file' not in request.files:
-        return render_template('index.html', error="No file part. Check your HTML 'name' attribute.")
+    try:
+        # 1. Verification: Did the form actually send the file?
+        if 'file' not in request.files:
+            return "ERROR: HTML form is missing name='file'", 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return "ERROR: No file selected in the browser", 400
 
-    file = request.files['file']
-
-    if file.filename == '':
-        return render_template('index.html', error="No file selected.")
-
-    if file:
-        try:
-            # 2. PATH LOGIC: Get the absolute path to the 'uploads' folder
-            # This is the #1 reason for refreshes on cloud servers
-            upload_dir = current_app.config['UPLOAD_FOLDER']
-            
-            # Create the folder if it's missing (Crucial for Render/Railway)
-            if not os.path.exists(upload_dir):
+        # 2. Path Logic: Create folder if it doesn't exist
+        # This is the #1 cause of refreshes on Render/Railway
+        upload_dir = current_app.config['UPLOAD_FOLDER']
+        if not os.path.exists(upload_dir):
+            try:
                 os.makedirs(upload_dir, exist_ok=True)
+            except Exception as e:
+                return f"PERMISSIONS ERROR: Could not create {upload_dir}. Details: {e}", 500
 
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(upload_dir, filename)
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(upload_dir, filename)
 
-            # 3. SAVE ACTION
-            file.save(filepath)
+        # 3. Save Attempt
+        file.save(filepath)
 
-            # 4. PANDAS PROCESSING
-            if filename.endswith('.csv'):
-                df = pd.read_csv(filepath)
-            else:
-                df = pd.read_excel(filepath)
+        # 4. Data Processing
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
 
-            # Generate stats for the dashboard
-            analysis = {
-                "columns": list(df.columns),
-                "summary": df.describe().to_html(classes='table table-sm')
-            }
+        # 5. Gemini AI Logic (Integrated)
+        summary = df.describe().to_string()
+        ai_insights = get_gemini_analysis(summary) # Uses your internal helper
 
-            # 5. GEMINI AI: Get the initial story
-            summary_for_ai = df.describe(include='all').to_string()
-            ai_insights = get_gemini_analysis(summary_for_ai)
+        return render_template(
+            'dashboard.html',
+            filename=filename,
+            ai_insights=ai_insights,
+            table=df.head(10).to_html(classes='table table-sm', index=False),
+            rows=len(df),
+            cols=len(df.columns),
+            analysis={"columns": list(df.columns)}
+        )
 
-            return render_template(
-                'dashboard.html',
-                filename=filename,
-                analysis=analysis,
-                ai_insights=ai_insights,
-                rows=len(df),
-                cols=len(df.columns),
-                table=df.head(10).to_html(classes='table table-sm table-striped', index=False)
-            )
-
-        except Exception as e:
-            # If it crashes here, it shows the error instead of refreshing
-            print(f"UPLOAD CRASH: {str(e)}")
-            return render_template('index.html', error=f"File Error: {str(e)}")
+    except Exception as e:
+        # This captures the 'Silent Crash' and shows it on your screen
+        error_details = traceback.format_exc()
+        print(f"CRITICAL UPLOAD FAILURE:\n{error_details}")
+        return f"<h1>App Crashed during Upload</h1><pre>{error_details}</pre>", 500
 
 @main_bp.route('/transform', methods=['POST'])
 def transform_data():
@@ -206,4 +203,5 @@ def delete_dataset():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
 
